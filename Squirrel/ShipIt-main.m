@@ -133,16 +133,29 @@ static void installRequest(RACSignal *readRequestSignal, NSString *applicationId
 						if (@available(macOS 11.0, *)) {
 							NSLog(@"Attempting to launch app on 11.0 or higher");
 
-							NSString *exe = NSProcessInfo.processInfo.arguments[0];
-							NSLog(@"Launching new ShipIt at %@ with instructions to launch %@", exe, bundleURL);
+							// HACK(yan.li): Speculate the file URL for the `ShipIt` binary in the new app bundle
+							NSURL *shipItURL = bundleURL;
+							shipItURL = [shipItURL URLByAppendingPathComponent:@"Contents" isDirectory:YES];
+							shipItURL = [shipItURL URLByAppendingPathComponent:@"Frameworks" isDirectory:YES];
+							shipItURL = [shipItURL URLByAppendingPathComponent:@"Squirrel.framework" isDirectory:YES];
+							shipItURL = [shipItURL URLByAppendingPathComponent:@"Versions" isDirectory:YES];
+							shipItURL = [shipItURL URLByAppendingPathComponent:@"A" isDirectory:YES];
+							shipItURL = [shipItURL URLByAppendingPathComponent:@"Resources" isDirectory:YES];
+							shipItURL = [shipItURL URLByAppendingPathComponent:@"ShipIt" isDirectory:NO];
+							
+							NSString *exe = [shipItURL path];
+							NSLog(@"Launching new ShipIt at %@ with arguments: [%@, %@]", exe, launchSignal, bundleURL);
 
 							NSTask *task = [[NSTask alloc] init];
 							[task setLaunchPath: exe];
 							[task setArguments: @[launchSignal, bundleURL.path]];
-							[task launch];
-							[task waitUntilExit];
-
-							NSLog(@"New ShipIt exited");
+							
+							BOOL launchSucceeded = [task launchAndReturnError:&error];
+							if (launchSucceeded) {
+								NSLog(@"Successfully launched new ShipIt");
+							} else {
+								NSLog(@"Failed to launch new ShipIt at %@: %@", exe, error);
+							}
 						} else {
 							NSLog(@"Attempting to launch app on lower than 11.0");
 							if (![NSWorkspace.sharedWorkspace launchApplicationAtURL:bundleURL options:NSWorkspaceLaunchDefault configuration:@{} error:&error]) {
@@ -170,6 +183,8 @@ int main(int argc, const char * argv[]) {
 		atexit_b(^{
 			NSLog(@"ShipIt quitting");
 		});
+		
+		NSLog(@"Starting patched ShipIt...");
 
 		if (argc < 3) {
 			NSLog(@"Missing launchd job label or state path for ShipIt");
